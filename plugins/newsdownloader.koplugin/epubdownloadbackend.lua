@@ -108,7 +108,6 @@ local function getUrlContent(url, timeout, maxtime)
         request['sink'] = ltn12.sink.table(sink)
     end
     request['url'] = url
-    request['protocol'] = "tlsv1"
     request['method'] = 'GET'
     local parsed = socket_url.parse(url)
 
