@@ -54,7 +54,7 @@ function EpubDownloadBackend:download(url, path)
         if (success) then
             logger.info("createEpubWithUI success")
         else
-            logger.info("createEpubWithUI success")
+            logger.info("createEpubWithUI failure")
         end
     end)
 end
