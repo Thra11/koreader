@@ -24,7 +24,7 @@ function EpubDownloadBackend:getResponseAsString(url, redirectCount)
     elseif redirectCount == max_redirects then
         error("EpubDownloadBackend: reached max redirects: ", redirectCount)
     end
-    logger.info("EpubDownloadBackend: url :", url)
+    logger.dbg("EpubDownloadBackend:getResponseAsString( url :", url, ")")
     local request, sink = {}, {}
     request.sink = ltn12.sink.table(sink)
     request.url = url
@@ -33,12 +33,12 @@ function EpubDownloadBackend:getResponseAsString(url, redirectCount)
     local httpRequest = parsed.scheme == "http" and http.request or https.request;
     local code, headers, status = socket.skip(1, httpRequest(request))
 
-    logger.info("response code:", code)
+    logger.dbg("response code:", code)
     if code ~= 200 then
-        logger.info("EpubDownloadBackend: HTTP response code <> 200. Response status: ", status)
+        logger.dbg("EpubDownloadBackend: HTTP response code <> 200. Response status: ", status)
         if code and code > 299 and code < 400  and headers and headers["location"] then -- handle 301, 302...
            local redirected_url = headers["location"]
-           logger.info("EpubDownloadBackend: Redirecting to url: ", redirected_url)
+           logger.dbg("EpubDownloadBackend: Redirecting to url: ", redirected_url)
            return self:getResponseAsString(redirected_url, redirectCount + 1)
         else
            error("EpubDownloadBackend: Don't know how to handle HTTP response status: ", status)
@@ -48,13 +48,13 @@ function EpubDownloadBackend:getResponseAsString(url, redirectCount)
 end
 
 function EpubDownloadBackend:download(url, path)
-    logger.info("EpubDownloadBackend:download")
+    logger.dbg("EpubDownloadBackend:download")
 --    self:createEpub(path, url)
     self:createEpubWithUI(path, url, function(success)
         if (success) then
-            logger.info("createEpubWithUI success")
+            logger.dbg("createEpubWithUI success")
         else
-            logger.info("createEpubWithUI failure")
+            logger.dbg("createEpubWithUI failure")
         end
     end)
 end
@@ -82,10 +82,10 @@ end
 
 -- Get URL content
 local function getUrlContent(url, timeout, maxtime)
-    logger.info("getUrlContent(", url, ",", timeout, ",", maxtime, ")")
+    logger.dbg("getUrlContent(", url, ",", timeout, ",", maxtime, ")")
 
     if not timeout then timeout = 10 end
-    logger.info("timeout:", timeout)
+    logger.dbg("timeout:", timeout)
     -- timeout needs to be set to "http", even if we use "https"
     --http.TIMEOUT, https.TIMEOUT = timeout, timeout
 
@@ -112,14 +112,15 @@ local function getUrlContent(url, timeout, maxtime)
     local parsed = socket_url.parse(url)
 
     local httpRequest = parsed.scheme == "http" and http.request or https.request
-    logger.info("request:", request)
+    logger.dbg("request:", request)
     local code, headers, status = socket.skip(1, httpRequest(request))
+    logger.dbg("After httpRequest")
     local content = table.concat(sink) -- empty or content accumulated till now
-    logger.info("type(code):", type(code))
-    logger.info("code:", code)
-    logger.info("headers:", headers)
-    logger.info("status:", status)
-    logger.info("#content:", #content)
+    logger.dbg("type(code):", type(code))
+    logger.dbg("code:", code)
+    logger.dbg("headers:", headers)
+    logger.dbg("status:", status)
+    logger.dbg("#content:", #content)
 
     if code == TIMEOUT_CODE or code == MAXTIME_CODE then
         logger.warn("request interrupted:", code)
@@ -140,7 +141,7 @@ local function getUrlContent(url, timeout, maxtime)
             return false, "Incomplete content received"
         end
     end
-    logger.info("Returning content ok")
+    logger.dbg("Returning content ok")
     return true, content
 end
 
@@ -168,7 +169,7 @@ function EpubDownloadBackend:loadPage(url)
         local timeout, maxtime = 10, 60
         success, content = getUrlContent(url, timeout, maxtime)
     end
-    logger.info("success:", success, "type(content):", type(content), "content:", content:sub(1, 500), "...")
+    logger.dbg("success:", success, "type(content):", type(content), "content:", content:sub(1, 500), "...")
     if not success then
         error(content)
     else
@@ -194,7 +195,7 @@ local ext_to_mimetype = {
 
 -- Create an epub file (with possibly images)
 function EpubDownloadBackend:createEpub(epub_path, url)
-    logger.info("EpubDownloadBackend:createEpub(", epub_path, ",", url, ")")
+    logger.dbg("EpubDownloadBackend:createEpub(", epub_path, ",", url, ")")
     local with_images = true
     -- Use Trapper to display progress and ask questions through the UI.
     -- We need to have been Trapper.wrap()'ed for UI to be used, otherwise
@@ -203,7 +204,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
 
     UI:info(_("Retrieving article…"))
     local html = self:loadPage(url)
-    logger.info("Successfully retrieved article html")
+    logger.dbg("Successfully retrieved article html")
     -- We may need to build absolute urls for non-absolute links and images urls
     local base_url = socket_url.parse(url)
 
@@ -211,7 +212,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     -- (see example at https://en.wikipedia.org/w/api.php?action=parse&page=E-book&prop=text|sections|displaytitle|revid&disablelimitreport=&disableeditsection)
     local cancelled = false
     local page_htmltitle = html:match([[<title>(.*)</title>]])
-    logger.info("page_htmltitle is ", page_htmltitle)
+    logger.dbg("page_htmltitle is ", page_htmltitle)
 --    local sections = html.sections -- Wikipedia provided TOC
     local bookid = "bookid_placeholder" --string.format("wikipedia_%s_%s_%s", lang, phtml.pageid, phtml.revid)
     -- Not sure if this bookid may ever be used by indexing software/calibre, but if it is,
@@ -226,7 +227,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     local processImg = function(img_tag)
         local src = img_tag:match([[src="([^"]*)"]])
         if src == nil or src == "" then
-            logger.info("no src found in ", img_tag)
+            logger.dbg("no src found in ", img_tag)
             return nil
         end
         if src:sub(1,2) == "//" then
@@ -245,7 +246,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
             local ext = src_ext:match(".*%.(%S%S%S?%S?%S?)$") -- extensions are only 2 to 5 chars
             if ext == nil or ext == "" then
                 -- we won't know what mimetype to use, ignore it
-                logger.info("no file extension found in ", src)
+                logger.dbg("no file extension found in ", src)
                 return nil
             end
             ext = ext:lower()
@@ -281,7 +282,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
             seen_images[src] = cur_image
             -- Use first image of reasonable size (not an icon) and portrait-like as cover-image
             if not cover_imgid and width and width > 50 and height and height > 50 and height > width then
-                logger.info("Found a suitable cover image")
+                logger.dbg("Found a suitable cover image")
                 cover_imgid = imgid
             end
             imagenum = imagenum + 1
@@ -302,7 +303,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
         return string.format([[<img src="%s" style="%s" alt=""/>]], cur_image.imgpath, style)
     end
     html = html:gsub("(<%s*img [^>]*>)", processImg)
-    logger.info("Images found in html:", images)
+    logger.dbg("Images found in html:", images)
 
     -- See what to do with images
     local include_images = true
@@ -338,7 +339,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     local ZipWriter = require("ffi/zipwriter")
     local epub = ZipWriter:new{}
     if not epub:open(epub_path_tmp) then
-        logger.info("Failed to open epub_path_tmp")
+        logger.dbg("Failed to open epub_path_tmp")
         return false
     end
 
@@ -357,7 +358,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
   </rootfiles>
 </container>]])
-    logger.info("Added META-INF/container.xml")
+    logger.dbg("Added META-INF/container.xml")
 
     -- ----------------------------------------------------------------
     -- OEBPS/content.opf : metadata + list of other files (paths relative to OEBPS/ directory)
@@ -383,7 +384,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     if include_images and cover_imgid then
         meta_cover = string.format([[<meta name="cover" content="%s"/>]], cover_imgid)
     end
-    logger.info("meta_cover:", meta_cover)
+    logger.dbg("meta_cover:", meta_cover)
     table.insert(content_opf_parts, string.format([[
 <?xml version='1.0' encoding='utf-8'?>
 <package xmlns="http://www.idpf.org/2007/opf"
@@ -414,7 +415,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
 </package>
 ]])
     epub:add("OEBPS/content.opf", table.concat(content_opf_parts))
-    logger.info("Added OEBPS/content.opf")
+    logger.dbg("Added OEBPS/content.opf")
 
     -- ----------------------------------------------------------------
     -- OEBPS/stylesheet.css
@@ -424,7 +425,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     epub:add("OEBPS/stylesheet.css", [[
 /* Empty */
 ]])
-    logger.info("Added OEBPS/stylesheet.css")
+    logger.dbg("Added OEBPS/stylesheet.css")
 
     -- ----------------------------------------------------------------
     -- OEBPS/toc.ncx : table of content
@@ -509,7 +510,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
 </ncx>
 ]])
     epub:add("OEBPS/toc.ncx", table.concat(toc_ncx_parts))
-    logger.info("Added OEBPS/toc.ncx")
+    logger.dbg("Added OEBPS/toc.ncx")
 
     -- ----------------------------------------------------------------
     -- OEBPS/content.html
@@ -542,7 +543,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
 --    html = html:gsub([[href="//]], [[href="https://]])
 
     epub:add("OEBPS/content.html", html)
-    logger.info("Added OEBPS/content.html")
+    logger.dbg("Added OEBPS/content.html")
 
     -- Force a GC to free the memory we used till now (the second call may
     -- help reclaim more memory).
@@ -559,7 +560,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
             -- We use the fast_refresh option from image #2 for a quicker download
             local go_on = UI:info(T(_("Retrieving image %1 / %2 …"), inum, nb_images), inum >= 2)
             if not go_on then
-                logger.info("cancelled")
+                logger.dbg("cancelled")
                 cancelled = true
                 break
             end
@@ -567,13 +568,13 @@ function EpubDownloadBackend:createEpub(epub_path, url)
             if use_img_2x and img.src2x then
                 src = img.src2x
             end
-            logger.info("Getting img ", src)
+            logger.dbg("Getting img ", src)
             local success, content = getUrlContent(src)
             -- success, content = getUrlContent(src..".unexistant") -- to simulate failure
             if success then
-                logger.info("success, size:", #content)
+                logger.dbg("success, size:", #content)
             else
-                logger.info("failed fetching:", src)
+                logger.dbg("failed fetching:", src)
             end
             if success then
                 -- Images do not need to be compressed, so spare some cpu cycles
@@ -582,7 +583,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
                     no_compression = false
                 end
                 epub:add("OEBPS/"..img.imgpath, content, no_compression)
-                logger.info("Adding OEBPS/"..img.imgpath)
+                logger.dbg("Adding OEBPS/"..img.imgpath)
             else
                 go_on = UI:confirm(T(_("Downloading image %1 failed. Continue anyway?"), inum), _("Stop"), _("Continue"))
                 if not go_on then
@@ -619,7 +620,7 @@ function EpubDownloadBackend:createEpub(epub_path, url)
 
     -- Finally move the .tmp to the final file
     os.rename(epub_path_tmp, epub_path)
-    logger.info("successfully created:", epub_path)
+    logger.dbg("successfully created:", epub_path)
 
     -- Force a GC to free the memory we used (the second call may help
     -- reclaim more memory).
@@ -631,7 +632,7 @@ end
 -- Wrap EpubDownloadBackend:createEpub() with UI progress info, provided
 -- by Trapper module.
 function EpubDownloadBackend:createEpubWithUI(epub_path, url, result_callback)
-    logger.info("EpubDownloadBackend:createEpubWithUI(", epub_path, ",", url, ",", title, ", ...)")
+    logger.dbg("EpubDownloadBackend:createEpubWithUI(", epub_path, ",", url, ",", title, ", ...)")
     -- To do any UI interaction while building the EPUB, we need
     -- to use a coroutine, so that our code can be suspended while waiting
     -- for user interaction, and resumed by UI widgets callbacks.
