@@ -1,12 +1,12 @@
 local ffiutil = require("ffi/util")
+local http = require("socket.http")
+local https = require("ssl.https")
 local logger = require("logger")
+local socket = require("socket")
+local socket_url = require("socket.url")
 local util = require("util")
 local _ = require("gettext")
 local T = ffiutil.template
-local http = require("socket.http")
-local https = require("ssl.https")
-local socket = require("socket")
-local socket_url = require("socket.url")
 
 local EpubDownloadBackend = {
    -- Can be set so HTTP requests will be done under Trapper and
@@ -26,11 +26,11 @@ function EpubDownloadBackend:getResponseAsString(url, redirectCount)
     end
     logger.info("EpubDownloadBackend: url :", url)
     local request, sink = {}, {}
-    request['sink'] = ltn12.sink.table(sink)
-    request['url'] = url
+    request.sink = ltn12.sink.table(sink)
+    request.url = url
     local parsed = socket_url.parse(url)
 
-    local httpRequest = parsed.scheme == 'http' and http.request or https.request;
+    local httpRequest = parsed.scheme == "http" and http.request or https.request;
     local code, headers, status = socket.skip(1, httpRequest(request))
 
     logger.info("response code:", code)
@@ -86,32 +86,32 @@ local function getUrlContent(url, timeout, maxtime)
 
     if not timeout then timeout = 10 end
     logger.info("timeout:", timeout)
-    -- timeout needs to be set to 'http', even if we use 'https'
+    -- timeout needs to be set to "http", even if we use "https"
     --http.TIMEOUT, https.TIMEOUT = timeout, timeout
 
-    -- 'timeout' delay works on socket, and is triggered when
+    -- "timeout" delay works on socket, and is triggered when
     -- that time has passed trying to connect, or after connection
     -- when no data has been read for this time.
     -- On a slow connection, it may not be triggered (as we could read
     -- 1 byte every 1 second, not triggering any timeout).
-    -- 'maxtime' can be provided to overcome that, and we start counting
+    -- "maxtime" can be provided to overcome that, and we start counting
     -- as soon as the first content byte is received (but it is checked
     -- for only when data is received).
-    -- Setting 'maxtime' and 'timeout' gives more chance to abort the request when
+    -- Setting "maxtime" and "timeout" gives more chance to abort the request when
     -- it takes too much time (in the worst case: in timeout+maxtime seconds).
     -- But time taken by DNS lookup cannot easily be accounted for, so
     -- a request may (when dns lookup takes time) exceed timeout and maxtime...
     local request, sink = {}, {}
     if maxtime then
-        request['sink'] = sink_table_with_maxtime(sink, maxtime)
+        request.sink = sink_table_with_maxtime(sink, maxtime)
     else
-        request['sink'] = ltn12.sink.table(sink)
+        request.sink = ltn12.sink.table(sink)
     end
-    request['url'] = url
-    request['method'] = 'GET'
+    request.url = url
+    request.method = "GET"
     local parsed = socket_url.parse(url)
 
-    local httpRequest = parsed.scheme == 'http' and http.request or https.request
+    local httpRequest = parsed.scheme == "http" and http.request or https.request
     logger.info("request:", request)
     local code, headers, status = socket.skip(1, httpRequest(request))
     local content = table.concat(sink) -- empty or content accumulated till now
