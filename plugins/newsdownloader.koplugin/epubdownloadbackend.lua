@@ -201,8 +201,6 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     -- We may need to build absolute urls for non-absolute links and images urls
     local base_url = socket_url.parse(url)
 
-    -- Get infos from wikipedia result
-    -- (see example at https://en.wikipedia.org/w/api.php?action=parse&page=E-book&prop=text|sections|displaytitle|revid&disablelimitreport=&disableeditsection)
     local cancelled = false
     local page_htmltitle = html:match([[<title>(.*)</title>]])
     logger.dbg("page_htmltitle is ", page_htmltitle)
@@ -212,7 +210,6 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     -- should it changes if content is updated (as now, including the wikipedia revisionId),
     -- or should it stays the same even if revid changes (content of the same book updated).
 
-    -- We need to find images in HTML to tell how many when asking user if they should be included
     local images = {}
     local seen_images = {}
     local imagenum = 1
@@ -301,20 +298,6 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     -- See what to do with images
     local include_images = true
     local use_img_2x = false
-    --[[
-    if with_images then
-        -- If no UI (Trapper:wrap() not called), UI:confirm() will answer true
-        if #images > 0 then
-            include_images = UI:confirm(T(_("This article contains %1 images.\nWould you like to download and include them in the generated EPUB file?"), #images), _("Don't include"), _("Include"))
-            if include_images then
-                use_img_2x = UI:confirm(_("Would you like to use slightly higher quality images? This will result in a bigger file size."), _("Standard quality"), _("Higher quality"))
-            end
-        else
-            UI:info(_("This article does not contain any images."))
-            ffiutil.sleep(1) -- Let the user see that
-        end
-    end
-    --]]
     if not include_images then
         -- Remove img tags to avoid little blank squares of missing images
         html = html:gsub("<%s*img [^>]*>", "")
@@ -430,53 +413,8 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     -- Add our own first section for first page, with page name as title
     table.insert(toc_ncx_parts, string.format([[<navPoint id="navpoint-%s" playOrder="%s"><navLabel><text>%s</text></navLabel><content src="content.html"/>]], num, num, page_htmltitle))
     table.insert(toc_ncx_parts, np_end)
-    -- Not essential for most articles, but longer articles might benefit from
-    -- parsing <h*> tags and constructing a proper TOC
-    --[=[
-    for isec, s in ipairs(sections) do
-        num = num + 1
-        -- Some chars in headings are converted to html entities in the
-        -- wikipedia-generated HTML. We need to do the same in TOC links
-        -- for the links to be valid.
-        local s_anchor = s.anchor:gsub("&", "&amp;"):gsub('"', "&quot;"):gsub(">", "&gt;"):gsub("<", "&lt;")
-        local s_title = string.format("%s %s", s.number, s.line)
-        -- Titles may include <i> and other html tags: let's remove them as
-        -- our TOC can only display text
-        s_title = (s_title:gsub("(%b<>)", ""))
-        -- We need to do as for page_htmltitle above. But headings can contain
-        -- html entities for < and > that we need to put back as html entities
-        s_title = util.htmlEntitiesToUtf8(s_title):gsub("&", "&#38;"):gsub(">", "&gt;"):gsub("<", "&lt;")
-        local s_level = s.toclevel
-        if s_level > depth then
-            depth = s_level -- max depth required in toc.ncx
-        end
-        if s_level == cur_level then
-            table.insert(toc_ncx_parts, np_end) -- close same-level previous navPoint
-        elseif s_level < cur_level then
-            table.insert(toc_ncx_parts, np_end) -- close same-level previous navPoint
-            while s_level < cur_level do -- close all in-between navPoint
-                table.insert(toc_ncx_parts, np_end)
-                cur_level = cur_level - 1
-            end
-        elseif s_level > cur_level + 1 then
-            -- a jump from level N to level N+2 or more ... should not happen
-            -- per epub spec, but we don't know about wikipedia...
-            -- so we create missing intermediate navPoints with same anchor as current section
-            while s_level > cur_level + 1 do
-                table.insert(toc_ncx_parts, "\n"..(" "):rep(cur_level))
-                table.insert(toc_ncx_parts, string.format([[<navPoint id="navpoint-%s" playOrder="%s"><navLabel><text>-</text></navLabel><content src="content.html#%s"/>]], num, num, s_anchor))
-                cur_level = cur_level + 1
-                num = num + 1
-            end
-        -- elseif s_level == cur_level + 1 then
-        --     sublevel, nothing to close, nothing to add
-        end
-        cur_level = s_level
-        table.insert(toc_ncx_parts, "\n"..(" "):rep(cur_level)) -- indentation, in case a person looks at it
-        table.insert(toc_ncx_parts, string.format([[<navPoint id="navpoint-%s" playOrder="%s"><navLabel><text>%s</text></navLabel><content src="content.html#%s"/>]], num, num, s_title, s_anchor))
-    end
-    --]=]
-    -- close nested <navPoint>
+    -- TODO: Not essential for most articles, but longer articles might benefit
+    -- from parsing <h*> tags and constructing a proper TOC
     while cur_level > 0 do
         table.insert(toc_ncx_parts, np_end)
         cur_level = cur_level - 1
@@ -507,34 +445,6 @@ function EpubDownloadBackend:createEpub(epub_path, url)
 
     -- ----------------------------------------------------------------
     -- OEBPS/content.html
-    -- Some small fixes to Wikipedia HTML to make crengine and the user happier
-
-    -- Most images are in a link to the image info page, which is a useless
-    -- external link for us, so let's remove this link.
---    html = html:gsub("<a[^>]*>%s*(<%s*img [^>]*>)%s*</a>", "%1")
-
-    -- For some <div class="thumb tright"> , which include nested divs, although
-    -- perfectly balanced, crengine seems to miss some closing </div> and we
-    -- end up having our image bordered box including the remaining main wiki text.
-    -- It looks like this code is supposed to deal with class= containing multiple
-    -- class names :
-    --   https://github.com/koreader/crengine/commit/0930ec7230e720c148fd6f231d69558832b4d53a
-    -- and that it may stumble on some cases.
-    -- It's all perfectly fine if we make all these div with a single class name
-    --   html = html:gsub([[<div class="thumb [^"]*">]], [[<div class="thumb">]])
-    --
-    -- But we may as well make all class= have a single name to avoid other problems
-    -- (no real risk with that, as we don't define any style for wikipedia class names,
-    -- except div.thumb that always appears first).
---    html = html:gsub([[(<[^>]* class="[^ "]+)%s+[^"]*"]], [[%1"]])
-
-    -- crengine seems to consider unknown tag as 'block' elements, so we may
-    -- want to remove or replace those that should be considered 'inline' elements
---    html = html:gsub("</?time[^>]*>", "")
-
-    -- Fix some other protocol-less links to wikipedia (href="//fr.wikipedia.org/w/index.php..)
---    html = html:gsub([[href="//]], [[href="https://]])
-
     epub:add("OEBPS/content.html", html)
     logger.dbg("Added OEBPS/content.html")
 
