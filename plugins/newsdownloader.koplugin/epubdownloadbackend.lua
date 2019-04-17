@@ -18,10 +18,10 @@ local EpubDownloadBackend = {
    dismissed_error_code = "Interrupted by user",
 }
 
-function EpubDownloadBackend:download(url, path)
+function EpubDownloadBackend:download(url, path, include_images)
     logger.dbg("EpubDownloadBackend:download")
 --    self:createEpub(path, url)
-    self:createEpubWithUI(path, url, function(success)
+    self:createEpubWithUI(path, url, include_images, function(success)
         if (success) then
             logger.dbg("createEpubWithUI success")
         else
@@ -187,7 +187,7 @@ local ext_to_mimetype = {
 }
 
 -- Create an epub file (with possibly images)
-function EpubDownloadBackend:createEpub(epub_path, url)
+function EpubDownloadBackend:createEpub(epub_path, url, include_images)
     logger.dbg("EpubDownloadBackend:createEpub(", epub_path, ",", url, ")")
     local with_images = true
     -- Use Trapper to display progress and ask questions through the UI.
@@ -296,7 +296,6 @@ function EpubDownloadBackend:createEpub(epub_path, url)
     logger.dbg("Images found in html:", images)
 
     -- See what to do with images
-    local include_images = true
     local use_img_2x = false
     if not include_images then
         -- Remove img tags to avoid little blank squares of missing images
@@ -534,7 +533,7 @@ end
 
 -- Wrap EpubDownloadBackend:createEpub() with UI progress info, provided
 -- by Trapper module.
-function EpubDownloadBackend:createEpubWithUI(epub_path, url, result_callback)
+function EpubDownloadBackend:createEpubWithUI(epub_path, url, include_images, result_callback)
     logger.dbg("EpubDownloadBackend:createEpubWithUI(", epub_path, ",", url, ",", title, ", ...)")
     -- To do any UI interaction while building the EPUB, we need
     -- to use a coroutine, so that our code can be suspended while waiting
@@ -547,7 +546,7 @@ function EpubDownloadBackend:createEpubWithUI(epub_path, url, result_callback)
         -- Trapper) would just abort (no reader crash, no error logged).
         -- So we use pcall to catch any errors, log it, and report
         -- the failure via result_callback.
-        local ok, success = pcall(self.createEpub, self, epub_path, url)
+        local ok, success = pcall(self.createEpub, self, epub_path, url, include_images)
         if ok and success then
             result_callback(true)
         else
