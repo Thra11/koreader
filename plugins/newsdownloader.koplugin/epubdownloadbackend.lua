@@ -18,35 +18,6 @@ local EpubDownloadBackend = {
    dismissed_error_code = "Interrupted by user",
 }
 
-function EpubDownloadBackend:getResponseAsString(url, redirectCount)
-    if not redirectCount then
-        redirectCount = 0
-    elseif redirectCount == max_redirects then
-        error("EpubDownloadBackend: reached max redirects: ", redirectCount)
-    end
-    logger.dbg("EpubDownloadBackend:getResponseAsString( url :", url, ")")
-    local request, sink = {}, {}
-    request.sink = ltn12.sink.table(sink)
-    request.url = url
-    local parsed = socket_url.parse(url)
-
-    local httpRequest = parsed.scheme == "http" and http.request or https.request;
-    local code, headers, status = socket.skip(1, httpRequest(request))
-
-    logger.dbg("response code:", code)
-    if code ~= 200 then
-        logger.dbg("EpubDownloadBackend: HTTP response code <> 200. Response status: ", status)
-        if code and code > 299 and code < 400  and headers and headers["location"] then -- handle 301, 302...
-           local redirected_url = headers["location"]
-           logger.dbg("EpubDownloadBackend: Redirecting to url: ", redirected_url)
-           return self:getResponseAsString(redirected_url, redirectCount + 1)
-        else
-           error("EpubDownloadBackend: Don't know how to handle HTTP response status: ", status)
-        end
-    end
-    return table.concat(sink)
-end
-
 function EpubDownloadBackend:download(url, path)
     logger.dbg("EpubDownloadBackend:download")
 --    self:createEpub(path, url)
@@ -81,8 +52,13 @@ local function sink_table_with_maxtime(t, maxtime)
 end
 
 -- Get URL content
-local function getUrlContent(url, timeout, maxtime)
-    logger.dbg("getUrlContent(", url, ",", timeout, ",", maxtime, ")")
+local function getUrlContent(url, timeout, maxtime, redirectCount)
+    logger.dbg("getUrlContent(", url, ",", timeout, ",", maxtime, ",", redirectCount, ")")
+    if not redirectCount then
+        redirectCount = 0
+    elseif redirectCount == max_redirects then
+        error("EpubDownloadBackend: reached max redirects: ", redirectCount)
+    end
 
     if not timeout then timeout = 10 end
     logger.dbg("timeout:", timeout)
@@ -131,6 +107,13 @@ local function getUrlContent(url, timeout, maxtime)
         return false, "Network or remote server unavailable"
     end
     if not code or string.sub(code, 1, 1) ~= "2" then -- all 200..299 HTTP codes are OK
+        if code and code > 299 and code < 400  and headers and headers.location then -- handle 301, 302...
+           local redirected_url = headers.location
+           logger.dbg("getUrlContent: Redirecting to url: ", redirected_url)
+           return self:getUrlContent(redirected_url, timeout, maxtime, redirectCount + 1)
+        else
+           error("EpubDownloadBackend: Don't know how to handle HTTP response status: ", status)
+        end
         logger.warn("HTTP status not okay:", code, status)
         return false, "Remote server error or unavailable"
     end
@@ -143,6 +126,16 @@ local function getUrlContent(url, timeout, maxtime)
     end
     logger.dbg("Returning content ok")
     return true, content
+end
+
+function EpubDownloadBackend:getResponseAsString(url)
+    logger.dbg("EpubDownloadBackend:getResponseAsString(", url, ")")
+    local success, content = getUrlContent(url)
+    if (success) then
+        return content
+    else
+        error("Failed to download content for url:", url)
+    end
 end
 
 function EpubDownloadBackend:setTrapWidget(trap_widget)
