@@ -33,7 +33,7 @@ function DocumentRegistry:getRandomFile(dir, opened, extension)
     local ok, iter, dir_obj = pcall(lfs.dir, dir)
     if ok then
         for entry in iter, dir_obj do
-            if lfs.attributes(dir .. entry, "mode") == "file" and self:hasProvider(dir .. entry)
+            if lfs.attributes(dir .. entry, "mode") == "file" and self:reallyHasProvider(dir .. entry)
                 and (opened == nil or DocSettings:hasSidecarFile(dir .. entry) == opened)
                 and (extension == nil or extension[util.getFileNameSuffix(entry)]) then
                 i = i + 1
@@ -54,6 +54,10 @@ end
 -- @string file
 -- @treturn boolean
 function DocumentRegistry:hasProvider(file)
+    return true
+end
+
+function DocumentRegistry:reallyHasProvider(file)
     local filename_suffix = string.lower(util.getFileNameSuffix(file))
 
     if self.filetype_provider[filename_suffix] then
@@ -104,6 +108,9 @@ end
 -- @treturn table providers, or nil
 function DocumentRegistry:getProviders(file)
     local providers = {}
+    if not self:reallyHasProvider(file) then
+        file = "file.txt"
+    end
 
     -- TODO: some implementation based on mime types?
     for _, provider in ipairs(self.providers) do
